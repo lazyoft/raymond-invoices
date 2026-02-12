@@ -290,3 +290,6 @@ static void SeedData(IServiceProvider services)
     Console.WriteLine($"  - {dataStore.Clients.Count} clients");
     Console.WriteLine($"  - {dataStore.Invoices.Count} invoices");
 }
+
+// Make Program class accessible for integration tests
+public partial class Program { }
