@@ -1,0 +1,99 @@
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio cache/options
+.vs/
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# Rider
+.idea/
+*.sln.iml
+*.swp
+*.swo
+
+# ReSharper
+.resharper
+.resharper.user
+_ReSharper*/
+*_i.c
+*_p.c
+*_i.h
+header.h
+.ReSharper
+*.ReSharper
+*.rsuser
+*.suo
+*.user
+*.VC.db
+
+# Test Results
+TestResults/
+*.trx
+*.coverage
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Backup & temp files
+*~
+*.tmp
+*.bak
+*.swp
+*.swo
+*~.nib
+*.pbxuser
+*.perspectivev3
+
+# OS-specific
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Local appsettings
+appsettings.local.json
+appsettings.Development.json
+
+# Node modules (if using npm/yarn)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Misc
+.env
+.env.local
+*.log
+dist/
+publish/
+PublishProfiles/
+
+# Coverage
+coverage/
+*.opencover.xml
+*.coveragexml
+.a5c/
