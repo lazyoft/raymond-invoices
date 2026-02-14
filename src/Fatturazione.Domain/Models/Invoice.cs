@@ -73,6 +73,17 @@ public class Invoice
     public decimal RitenutaAmount { get; set; }
 
     /// <summary>
+    /// Indicates if the invoice is issued under "Regime Forfettario" (flat-rate tax regime)
+    /// </summary>
+    public bool IsRegimeForfettario { get; set; }
+
+    /// <summary>
+    /// Stamp duty amount (Imposta di Bollo)
+    /// 2.00 EUR when required per DPR 642/72 Art. 13
+    /// </summary>
+    public decimal BolloAmount { get; set; }
+
+    /// <summary>
     /// Total amount due (SubTotal - Ritenuta)
     /// Totale Documento
     /// </summary>

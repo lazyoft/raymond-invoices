@@ -26,6 +26,7 @@ builder.Services.AddScoped<IInvoiceRepository, InvoiceRepository>();
 
 // Register domain services
 builder.Services.AddScoped<IRitenutaService, RitenutaService>();
+builder.Services.AddScoped<IBolloService, BolloService>();
 builder.Services.AddScoped<IInvoiceCalculationService, InvoiceCalculationService>();
 builder.Services.AddScoped<IInvoiceNumberingService, InvoiceNumberingService>();
 

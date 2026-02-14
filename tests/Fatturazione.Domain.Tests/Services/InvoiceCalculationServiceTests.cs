@@ -11,12 +11,14 @@ namespace Fatturazione.Domain.Tests.Services;
 public class InvoiceCalculationServiceTests
 {
     private readonly IRitenutaService _ritenutaServiceMock;
+    private readonly IBolloService _bolloServiceMock;
     private readonly InvoiceCalculationService _sut;
 
     public InvoiceCalculationServiceTests()
     {
         _ritenutaServiceMock = Substitute.For<IRitenutaService>();
-        _sut = new InvoiceCalculationService(_ritenutaServiceMock);
+        _bolloServiceMock = Substitute.For<IBolloService>();
+        _sut = new InvoiceCalculationService(_ritenutaServiceMock, _bolloServiceMock);
     }
 
     #region CalculateItemTotals Tests
@@ -423,6 +425,177 @@ public class InvoiceCalculationServiceTests
         // Assert
         result.Should().HaveCount(1);
         result[IvaRate.Standard].Should().Be(440m); // 220 + 220
+    }
+
+    #endregion
+
+    #region Regime Forfettario Tests
+
+    [Fact]
+    public void CalculateInvoiceTotals_Forfettario_IvaIsZero()
+    {
+        // Arrange
+        var invoice = new Invoice
+        {
+            IsRegimeForfettario = true,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        _bolloServiceMock.CalculateBollo(invoice).Returns(2.00m);
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.IvaTotal.Should().Be(0m, "IVA must be 0 for Regime Forfettario per Legge 190/2014");
+        invoice.Items[0].IvaAmount.Should().Be(0m);
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_Forfettario_RitenutaIsZero()
+    {
+        // Arrange
+        var client = new Client
+        {
+            SubjectToRitenuta = true,
+            RitenutaPercentage = 20m
+        };
+
+        var invoice = new Invoice
+        {
+            IsRegimeForfettario = true,
+            Client = client,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        _bolloServiceMock.CalculateBollo(invoice).Returns(2.00m);
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.RitenutaAmount.Should().Be(0m, "Ritenuta must be 0 for Regime Forfettario per Legge 190/2014");
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_Forfettario_Over7747_BolloApplied()
+    {
+        // Arrange
+        var invoice = new Invoice
+        {
+            IsRegimeForfettario = true,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        _bolloServiceMock.CalculateBollo(invoice).Returns(2.00m);
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.BolloAmount.Should().Be(2.00m, "Bollo required when imponibile > 77.47 EUR per DPR 642/72 Art. 13");
+        _bolloServiceMock.Received(1).CalculateBollo(invoice);
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_Forfettario_Under7747_NoBolloApplied()
+    {
+        // Arrange
+        var invoice = new Invoice
+        {
+            IsRegimeForfettario = true,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 50, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        _bolloServiceMock.CalculateBollo(invoice).Returns(0m);
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.BolloAmount.Should().Be(0m, "No bollo required when imponibile <= 77.47 EUR");
+        _bolloServiceMock.Received(1).CalculateBollo(invoice);
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_Forfettario_TotalDue_EqualsImponibilePlusBollo()
+    {
+        // Arrange
+        var invoice = new Invoice
+        {
+            IsRegimeForfettario = true,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        _bolloServiceMock.CalculateBollo(invoice).Returns(2.00m);
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.ImponibileTotal.Should().Be(1000m);
+        invoice.IvaTotal.Should().Be(0m);
+        invoice.RitenutaAmount.Should().Be(0m);
+        invoice.BolloAmount.Should().Be(2.00m);
+        invoice.TotalDue.Should().Be(1002.00m, "TotalDue = Imponibile + Bollo for Regime Forfettario");
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_Forfettario_IvaByRateIsEmpty()
+    {
+        // Arrange
+        var invoice = new Invoice
+        {
+            IsRegimeForfettario = true,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        _bolloServiceMock.CalculateBollo(invoice).Returns(2.00m);
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.IvaByRate.Should().BeEmpty("No IVA breakdown for Regime Forfettario");
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_NonForfettario_NoBolloApplied()
+    {
+        // Arrange
+        var invoice = new Invoice
+        {
+            IsRegimeForfettario = false,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.BolloAmount.Should().Be(0m, "No bollo for standard invoices with IVA");
+        _bolloServiceMock.DidNotReceive().CalculateBollo(Arg.Any<Invoice>());
     }
 
     #endregion

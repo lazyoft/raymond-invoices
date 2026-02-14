@@ -8,10 +8,12 @@ namespace Fatturazione.Domain.Services;
 public class InvoiceCalculationService : IInvoiceCalculationService
 {
     private readonly IRitenutaService _ritenutaService;
+    private readonly IBolloService _bolloService;
 
-    public InvoiceCalculationService(IRitenutaService ritenutaService)
+    public InvoiceCalculationService(IRitenutaService ritenutaService, IBolloService bolloService)
     {
         _ritenutaService = ritenutaService;
+        _bolloService = bolloService;
     }
 
     /// <summary>
@@ -25,6 +27,7 @@ public class InvoiceCalculationService : IInvoiceCalculationService
             invoice.IvaTotal = 0;
             invoice.SubTotal = 0;
             invoice.RitenutaAmount = 0;
+            invoice.BolloAmount = 0;
             invoice.TotalDue = 0;
             return;
         }
@@ -36,17 +39,46 @@ public class InvoiceCalculationService : IInvoiceCalculationService
         }
 
         invoice.ImponibileTotal = invoice.Items.Sum(i => i.Imponibile);
-        invoice.IvaTotal = invoice.Items.Sum(i => i.IvaAmount);
-        invoice.SubTotal = invoice.ImponibileTotal + invoice.IvaTotal;
 
-        // Calculate IVA breakdown by rate
-        invoice.IvaByRate = CalculateIvaByRate(invoice);
+        // Handle Regime Forfettario: no IVA, no ritenuta
+        if (invoice.IsRegimeForfettario)
+        {
+            // Force IVA to 0 for all items (per Legge 190/2014)
+            foreach (var item in invoice.Items)
+            {
+                item.IvaAmount = 0;
+                item.Total = item.Imponibile;
+            }
 
-        // Calculate ritenuta
-        invoice.RitenutaAmount = CalculateRitenutaAmount(invoice);
+            invoice.IvaTotal = 0;
+            invoice.SubTotal = invoice.ImponibileTotal;
+            invoice.IvaByRate = new Dictionary<IvaRate, decimal>();
+            invoice.RitenutaAmount = 0;
 
-        // Calculate total due
-        invoice.TotalDue = invoice.SubTotal - invoice.RitenutaAmount;
+            // Calculate stamp duty (imposta di bollo) per DPR 642/72 Art. 13
+            invoice.BolloAmount = _bolloService.CalculateBollo(invoice);
+
+            // Total due = Imponibile + Bollo (no IVA, no ritenuta for forfettari)
+            invoice.TotalDue = invoice.ImponibileTotal + invoice.BolloAmount;
+        }
+        else
+        {
+            // Standard calculation for non-forfettari
+            invoice.IvaTotal = invoice.Items.Sum(i => i.IvaAmount);
+            invoice.SubTotal = invoice.ImponibileTotal + invoice.IvaTotal;
+
+            // Calculate IVA breakdown by rate
+            invoice.IvaByRate = CalculateIvaByRate(invoice);
+
+            // Calculate ritenuta
+            invoice.RitenutaAmount = CalculateRitenutaAmount(invoice);
+
+            // No bollo for standard invoices with IVA
+            invoice.BolloAmount = 0;
+
+            // Calculate total due
+            invoice.TotalDue = invoice.SubTotal - invoice.RitenutaAmount;
+        }
     }
 
     /// <summary>
