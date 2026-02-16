@@ -18,6 +18,12 @@ public enum IvaRate
     Reduced = 10,
 
     /// <summary>
+    /// Intermediate rate (5%) - Aliquota intermedia
+    /// Applied to social-health services, natural gas (first 480 mc/year)
+    /// </summary>
+    Intermediate = 5,
+
+    /// <summary>
     /// Super-reduced rate (4%) - Aliquota super-ridotta
     /// Applied to essential goods (food, books, newspapers)
     /// </summary>

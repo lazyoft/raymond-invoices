@@ -138,6 +138,15 @@ public static class InvoiceEndpoints
             return Results.NotFound();
         }
 
+        // Check immutability: issued invoices cannot be modified (Art. 21 DPR 633/72)
+        if (existing.Status != InvoiceStatus.Draft)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { "Status", new[] { "Cannot modify an issued invoice. Use credit/debit note (nota di credito/debito) instead." } }
+            });
+        }
+
         // Validate client exists
         var clientExists = await clientRepository.ExistsAsync(invoice.ClientId);
         if (!clientExists)
@@ -194,7 +203,9 @@ public static class InvoiceEndpoints
     private static async Task<IResult> IssueInvoice(
         Guid id,
         IInvoiceRepository repository,
-        IInvoiceNumberingService numberingService)
+        IClientRepository clientRepository,
+        IInvoiceNumberingService numberingService,
+        IInvoiceCalculationService calculationService)
     {
         var invoice = await repository.GetByIdAsync(id);
         if (invoice == null)
@@ -210,6 +221,12 @@ public static class InvoiceEndpoints
                 { "Status", new[] { $"Cannot transition from {invoice.Status} to Issued" } }
             });
         }
+
+        // Load client for calculations
+        invoice.Client = await clientRepository.GetByIdAsync(invoice.ClientId);
+
+        // Recalculate totals before issuing (Bug #8 fix)
+        calculationService.CalculateInvoiceTotals(invoice);
 
         // Generate invoice number
         var lastInvoiceNumber = await repository.GetLastInvoiceNumberAsync();

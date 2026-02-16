@@ -22,7 +22,7 @@ public class InvoiceValidatorTests
             DueDate = DateTime.Now.AddDays(30),
             Items = new List<InvoiceItem>
             {
-                new InvoiceItem { Description = "Service" }
+                new InvoiceItem { Description = "Service", Quantity = 1, UnitPrice = 100 }
             }
         };
 
@@ -153,11 +153,127 @@ public class InvoiceValidatorTests
 
         // Assert
         isValid.Should().BeFalse();
-        errors.Should().HaveCount(4);
+        errors.Should().HaveCount(5);
         errors.Should().Contain("ClientId è obbligatorio");
         errors.Should().Contain("InvoiceDate è obbligatoria");
         errors.Should().Contain("DueDate è obbligatoria");
         errors.Should().Contain("Item 1: Description è obbligatoria");
+        errors.Should().Contain("Item 1: Quantity deve essere maggiore di 0");
+    }
+
+    [Fact]
+    public void Validate_WithNoItems_ReturnsError()
+    {
+        // Art. 21 DPR 633/72 - fattura deve avere almeno un item
+        var invoice = new Invoice
+        {
+            ClientId = Guid.NewGuid(),
+            InvoiceDate = DateTime.Now,
+            DueDate = DateTime.Now.AddDays(30),
+            Items = new List<InvoiceItem>()
+        };
+
+        var (isValid, errors) = InvoiceValidator.Validate(invoice);
+
+        isValid.Should().BeFalse();
+        errors.Should().Contain("La fattura deve contenere almeno un item");
+    }
+
+    [Fact]
+    public void Validate_WithNullItems_ReturnsError()
+    {
+        var invoice = new Invoice
+        {
+            ClientId = Guid.NewGuid(),
+            InvoiceDate = DateTime.Now,
+            DueDate = DateTime.Now.AddDays(30),
+            Items = null!
+        };
+
+        var (isValid, errors) = InvoiceValidator.Validate(invoice);
+
+        isValid.Should().BeFalse();
+        errors.Should().Contain("La fattura deve contenere almeno un item");
+    }
+
+    [Fact]
+    public void Validate_WithZeroQuantity_ReturnsError()
+    {
+        var invoice = new Invoice
+        {
+            ClientId = Guid.NewGuid(),
+            InvoiceDate = DateTime.Now,
+            DueDate = DateTime.Now.AddDays(30),
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Description = "Service", Quantity = 0, UnitPrice = 100 }
+            }
+        };
+
+        var (isValid, errors) = InvoiceValidator.Validate(invoice);
+
+        isValid.Should().BeFalse();
+        errors.Should().Contain("Item 1: Quantity deve essere maggiore di 0");
+    }
+
+    [Fact]
+    public void Validate_WithNegativeQuantity_ReturnsError()
+    {
+        var invoice = new Invoice
+        {
+            ClientId = Guid.NewGuid(),
+            InvoiceDate = DateTime.Now,
+            DueDate = DateTime.Now.AddDays(30),
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Description = "Service", Quantity = -1, UnitPrice = 100 }
+            }
+        };
+
+        var (isValid, errors) = InvoiceValidator.Validate(invoice);
+
+        isValid.Should().BeFalse();
+        errors.Should().Contain("Item 1: Quantity deve essere maggiore di 0");
+    }
+
+    [Fact]
+    public void Validate_WithNegativeUnitPrice_ReturnsError()
+    {
+        var invoice = new Invoice
+        {
+            ClientId = Guid.NewGuid(),
+            InvoiceDate = DateTime.Now,
+            DueDate = DateTime.Now.AddDays(30),
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Description = "Service", Quantity = 1, UnitPrice = -50 }
+            }
+        };
+
+        var (isValid, errors) = InvoiceValidator.Validate(invoice);
+
+        isValid.Should().BeFalse();
+        errors.Should().Contain("Item 1: UnitPrice non può essere negativo");
+    }
+
+    [Fact]
+    public void Validate_WithZeroUnitPrice_IsValid()
+    {
+        // Zero unit price is allowed (e.g., promotional items)
+        var invoice = new Invoice
+        {
+            ClientId = Guid.NewGuid(),
+            InvoiceDate = DateTime.Now,
+            DueDate = DateTime.Now.AddDays(30),
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Description = "Free Sample", Quantity = 1, UnitPrice = 0 }
+            }
+        };
+
+        var (isValid, errors) = InvoiceValidator.Validate(invoice);
+
+        isValid.Should().BeTrue();
     }
 
     #endregion

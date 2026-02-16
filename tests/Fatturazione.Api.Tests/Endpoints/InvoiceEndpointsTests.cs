@@ -320,6 +320,99 @@ public class InvoiceEndpointsTests : IClassFixture<WebApplicationFactory<Program
     }
 
     [Fact]
+    public async Task UpdateInvoice_WhenIssued_ReturnsBadRequest()
+    {
+        // Create a draft invoice, issue it, then try to update it
+        var clientsResponse = await _client.GetAsync("/api/clients");
+        var clients = await clientsResponse.Content.ReadFromJsonAsync<List<Client>>();
+        var client = clients!.First();
+
+        var newInvoice = new Invoice
+        {
+            ClientId = client.Id,
+            InvoiceDate = DateTime.Now,
+            DueDate = DateTime.Now.AddDays(30),
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Description = "Test", Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        var createResponse = await _client.PostAsJsonAsync("/api/invoices", newInvoice);
+        var createdInvoice = await createResponse.Content.ReadFromJsonAsync<Invoice>();
+
+        // Issue the invoice
+        await _client.PostAsync($"/api/invoices/{createdInvoice!.Id}/issue", null);
+
+        // Try to update the issued invoice
+        createdInvoice.Items[0].UnitPrice = 2000;
+        var updateResponse = await _client.PutAsJsonAsync($"/api/invoices/{createdInvoice.Id}", createdInvoice);
+
+        // Assert - should be rejected
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task UpdateInvoice_WhenDraft_ReturnsOk()
+    {
+        var clientsResponse = await _client.GetAsync("/api/clients");
+        var clients = await clientsResponse.Content.ReadFromJsonAsync<List<Client>>();
+        var client = clients!.First();
+
+        var newInvoice = new Invoice
+        {
+            ClientId = client.Id,
+            InvoiceDate = DateTime.Now,
+            DueDate = DateTime.Now.AddDays(30),
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Description = "Test", Quantity = 1, UnitPrice = 500, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        var createResponse = await _client.PostAsJsonAsync("/api/invoices", newInvoice);
+        var createdInvoice = await createResponse.Content.ReadFromJsonAsync<Invoice>();
+
+        // Update the draft invoice (should work)
+        createdInvoice!.Items[0].UnitPrice = 1000;
+        var updateResponse = await _client.PutAsJsonAsync($"/api/invoices/{createdInvoice.Id}", createdInvoice);
+
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task IssueInvoice_RecalculatesTotalsBeforeIssuing()
+    {
+        var clientsResponse = await _client.GetAsync("/api/clients");
+        var clients = await clientsResponse.Content.ReadFromJsonAsync<List<Client>>();
+        var client = clients!.First();
+
+        var newInvoice = new Invoice
+        {
+            ClientId = client.Id,
+            InvoiceDate = DateTime.Now,
+            DueDate = DateTime.Now.AddDays(30),
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Description = "Service", Quantity = 2, UnitPrice = 500, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        var createResponse = await _client.PostAsJsonAsync("/api/invoices", newInvoice);
+        var createdInvoice = await createResponse.Content.ReadFromJsonAsync<Invoice>();
+
+        // Issue the invoice
+        var issueResponse = await _client.PostAsync($"/api/invoices/{createdInvoice!.Id}/issue", null);
+        var issuedInvoice = await issueResponse.Content.ReadFromJsonAsync<Invoice>();
+
+        // Assert totals are correctly calculated
+        issuedInvoice!.ImponibileTotal.Should().Be(1000m);
+        issuedInvoice.IvaTotal.Should().Be(220m);
+        issuedInvoice.SubTotal.Should().Be(1220m);
+        issuedInvoice.Status.Should().Be(InvoiceStatus.Issued);
+    }
+
+    [Fact]
     public async Task DeleteInvoice_WithValidId_ReturnsNoContent()
     {
         // Arrange - First create an invoice to delete

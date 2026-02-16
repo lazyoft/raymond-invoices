@@ -58,6 +58,28 @@ public class Client
     public decimal RitenutaPercentage { get; set; } = 20.0m;
 
     /// <summary>
+    /// Whether this client is subject to Split Payment (scissione dei pagamenti)
+    /// Typically true for Public Administration clients
+    /// Per Art. 17-ter DPR 633/72
+    /// </summary>
+    public bool SubjectToSplitPayment { get; set; }
+
+    /// <summary>
+    /// Codice Univoco Ufficio - 6 alphanumeric characters, mandatory for PA
+    /// </summary>
+    public string? CodiceUnivocoUfficio { get; set; }
+
+    /// <summary>
+    /// CIG - Codice Identificativo di Gara (10 characters)
+    /// </summary>
+    public string? CIG { get; set; }
+
+    /// <summary>
+    /// CUP - Codice Unico di Progetto (15 characters)
+    /// </summary>
+    public string? CUP { get; set; }
+
+    /// <summary>
     /// Date the client was created
     /// </summary>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

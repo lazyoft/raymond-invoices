@@ -104,6 +104,26 @@ public class InvoiceCalculationServiceTests
     }
 
     [Fact]
+    public void CalculateItemTotals_WithIntermediateIva_CalculatesCorrectly()
+    {
+        // Arrange - Prestazione socio-sanitaria cooperativa sociale
+        var item = new InvoiceItem
+        {
+            Quantity = 10,
+            UnitPrice = 200,
+            IvaRate = IvaRate.Intermediate // 5%
+        };
+
+        // Act
+        _sut.CalculateItemTotals(item);
+
+        // Assert
+        item.Imponibile.Should().Be(2000m);
+        item.IvaAmount.Should().Be(100m); // 2000 * 5% = 100
+        item.Total.Should().Be(2100m);
+    }
+
+    [Fact]
     public void CalculateItemTotals_WithDiscountPercentage_CalculatesCorrectly()
     {
         // Arrange
@@ -218,6 +238,28 @@ public class InvoiceCalculationServiceTests
     }
 
     [Fact]
+    public void CalculateInvoiceTotals_WithIntermediateIva_CalculatesCorrectly()
+    {
+        // Arrange
+        var invoice = new Invoice
+        {
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Intermediate }
+            }
+        };
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.ImponibileTotal.Should().Be(1000m);
+        invoice.IvaTotal.Should().Be(50m); // 1000 * 5% = 50
+        invoice.SubTotal.Should().Be(1050m);
+        invoice.TotalDue.Should().Be(1050m); // No ritenuta without client
+    }
+
+    [Fact]
     public void CalculateInvoiceTotals_WithMultipleItemsDifferentRates_AggregatesCorrectly()
     {
         // Arrange
@@ -295,11 +337,9 @@ public class InvoiceCalculationServiceTests
     }
 
     [Fact]
-    [Trait("Category", "KnownBug")]
-    public void CalculateInvoiceTotals_WithClientSubjectToRitenuta_CalculatesOnSubTotal()
+    public void CalculateInvoiceTotals_WithClientSubjectToRitenuta_CalculatesOnImponibile()
     {
-        // BUG: la ritenuta dovrebbe essere calcolata su ImponibileTotal (1000), 
-        // non su SubTotal (1220). Valore corretto: RitenutaAmount = 200, TotalDue = 1020
+        // Art. 25 DPR 600/73: la ritenuta si calcola sull'imponibile (netto IVA)
 
         // Arrange
         var client = new Client
@@ -318,17 +358,17 @@ public class InvoiceCalculationServiceTests
         };
 
         _ritenutaServiceMock.AppliesRitenuta(client).Returns(true);
-        _ritenutaServiceMock.CalculateRitenuta(Arg.Any<decimal>(), 20m).Returns(244m);
+        _ritenutaServiceMock.CalculateRitenuta(1000m, 20m).Returns(200m);
 
         // Act
         _sut.CalculateInvoiceTotals(invoice);
 
-        // Assert - documents current (buggy) behavior
+        // Assert
         invoice.ImponibileTotal.Should().Be(1000m);
         invoice.IvaTotal.Should().Be(220m);
         invoice.SubTotal.Should().Be(1220m);
-        invoice.RitenutaAmount.Should().Be(244m); // Bug: should be 200
-        invoice.TotalDue.Should().Be(976m); // Bug: should be 1020
+        invoice.RitenutaAmount.Should().Be(200m);
+        invoice.TotalDue.Should().Be(1020m);
     }
 
     #endregion
@@ -336,10 +376,9 @@ public class InvoiceCalculationServiceTests
     #region CalculateRitenutaAmount Tests
 
     [Fact]
-    [Trait("Category", "KnownBug")]
-    public void CalculateRitenutaAmount_PassesSubTotalToService_NotImponibile()
+    public void CalculateRitenutaAmount_PassesImponibileTotalToService()
     {
-        // BUG: dovrebbe passare ImponibileTotal, non SubTotal
+        // Art. 25 DPR 600/73: verifica che venga passato ImponibileTotal al servizio ritenuta
 
         // Arrange
         var client = new Client
@@ -362,8 +401,44 @@ public class InvoiceCalculationServiceTests
         // Act
         _sut.CalculateInvoiceTotals(invoice);
 
-        // Assert - verify that SubTotal (1220) is passed, not ImponibileTotal (1000)
-        _ritenutaServiceMock.Received(1).CalculateRitenuta(1220m, 20m);
+        // Assert - verify that ImponibileTotal (1000) is passed, not SubTotal (1220)
+        _ritenutaServiceMock.Received(1).CalculateRitenuta(1000m, 20m);
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_ProfessionalClient_RitenutaEndToEnd()
+    {
+        // End-to-end: Imponibile 5000, IVA 22% = 1100, SubTotal = 6100,
+        // Ritenuta 20% of 5000 = 1000, TotalDue = 6100 - 1000 = 5100
+
+        // Arrange
+        var client = new Client
+        {
+            SubjectToRitenuta = true,
+            RitenutaPercentage = 20m
+        };
+
+        var invoice = new Invoice
+        {
+            Client = client,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 5, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        _ritenutaServiceMock.AppliesRitenuta(client).Returns(true);
+        _ritenutaServiceMock.CalculateRitenuta(5000m, 20m).Returns(1000m);
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.ImponibileTotal.Should().Be(5000m);
+        invoice.IvaTotal.Should().Be(1100m);
+        invoice.SubTotal.Should().Be(6100m);
+        invoice.RitenutaAmount.Should().Be(1000m);
+        invoice.TotalDue.Should().Be(5100m);
     }
 
     #endregion
@@ -425,6 +500,40 @@ public class InvoiceCalculationServiceTests
         // Assert
         result.Should().HaveCount(1);
         result[IvaRate.Standard].Should().Be(440m); // 220 + 220
+    }
+
+    [Fact]
+    public void CalculateIvaByRate_WithAllFiveRates_ReturnsCorrectBreakdown()
+    {
+        // Arrange
+        var invoice = new Invoice
+        {
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard },
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Reduced },
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Intermediate },
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.SuperReduced },
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Zero }
+            }
+        };
+
+        // Calculate item totals first
+        foreach (var item in invoice.Items)
+        {
+            _sut.CalculateItemTotals(item);
+        }
+
+        // Act
+        var result = _sut.CalculateIvaByRate(invoice);
+
+        // Assert
+        result.Should().HaveCount(5);
+        result[IvaRate.Standard].Should().Be(220m);      // 1000 * 22%
+        result[IvaRate.Reduced].Should().Be(100m);        // 1000 * 10%
+        result[IvaRate.Intermediate].Should().Be(50m);    // 1000 * 5%
+        result[IvaRate.SuperReduced].Should().Be(40m);    // 1000 * 4%
+        result[IvaRate.Zero].Should().Be(0m);             // 1000 * 0%
     }
 
     #endregion
@@ -596,6 +705,139 @@ public class InvoiceCalculationServiceTests
         // Assert
         invoice.BolloAmount.Should().Be(0m, "No bollo for standard invoices with IVA");
         _bolloServiceMock.DidNotReceive().CalculateBollo(Arg.Any<Invoice>());
+    }
+
+    #endregion
+
+    #region Split Payment Tests
+
+    [Fact]
+    public void CalculateInvoiceTotals_SplitPayment_TotalDueExcludesIva()
+    {
+        // Art. 17-ter DPR 633/72: PA pays only imponibile, IVA goes to Treasury
+        // Arrange
+        var client = new Client
+        {
+            ClientType = ClientType.PublicAdministration,
+            SubjectToSplitPayment = true,
+            SubjectToRitenuta = false
+        };
+
+        var invoice = new Invoice
+        {
+            Client = client,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.ImponibileTotal.Should().Be(1000m);
+        invoice.IvaTotal.Should().Be(220m);
+        invoice.SubTotal.Should().Be(1220m);
+        invoice.TotalDue.Should().Be(1000m, "PA pays only imponibile with split payment");
+        invoice.RitenutaAmount.Should().Be(0m, "Ritenuta not applicable with split payment");
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_SplitPayment_RitenutaIsZero()
+    {
+        // Split payment and ritenuta are mutually exclusive
+        // Arrange
+        var client = new Client
+        {
+            ClientType = ClientType.PublicAdministration,
+            SubjectToSplitPayment = true,
+            SubjectToRitenuta = true, // Even if set to true, split payment takes precedence
+            RitenutaPercentage = 20m
+        };
+
+        var invoice = new Invoice
+        {
+            Client = client,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        _ritenutaServiceMock.AppliesRitenuta(client).Returns(true);
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.RitenutaAmount.Should().Be(0m, "Split payment and ritenuta are mutually exclusive per Art. 17-ter DPR 633/72");
+        invoice.TotalDue.Should().Be(1000m);
+        _ritenutaServiceMock.DidNotReceive().CalculateRitenuta(Arg.Any<decimal>(), Arg.Any<decimal>());
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_SplitPayment_MultipleItems_CalculatesCorrectly()
+    {
+        // Arrange
+        var client = new Client
+        {
+            ClientType = ClientType.PublicAdministration,
+            SubjectToSplitPayment = true,
+            SubjectToRitenuta = false
+        };
+
+        var invoice = new Invoice
+        {
+            Client = client,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 10, UnitPrice = 100, IvaRate = IvaRate.Standard },
+                new InvoiceItem { Quantity = 5, UnitPrice = 200, IvaRate = IvaRate.Reduced }
+            }
+        };
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        // Imponibile: 1000 + 1000 = 2000
+        // IVA: 220 + 100 = 320
+        // SubTotal: 2320
+        // TotalDue: 2000 (split payment, IVA excluded)
+        invoice.ImponibileTotal.Should().Be(2000m);
+        invoice.IvaTotal.Should().Be(320m);
+        invoice.SubTotal.Should().Be(2320m);
+        invoice.TotalDue.Should().Be(2000m);
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_NotSplitPayment_TotalDueIncludesIva()
+    {
+        // Verify non-split-payment invoices still work correctly
+        // Arrange
+        var client = new Client
+        {
+            SubjectToSplitPayment = false,
+            SubjectToRitenuta = false
+        };
+
+        var invoice = new Invoice
+        {
+            Client = client,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        _ritenutaServiceMock.AppliesRitenuta(client).Returns(false);
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.TotalDue.Should().Be(1220m, "Non-split-payment invoices include IVA in TotalDue");
     }
 
     #endregion

@@ -30,7 +30,7 @@ public class InvoiceNumberingService : IInvoiceNumberingService
         int lastYear = GetYearFromInvoiceNumber(lastInvoiceNumber);
         int lastSequence = GetSequenceFromInvoiceNumber(lastInvoiceNumber);
 
-        int nextSequence = lastSequence + 1;
+        int nextSequence = (currentYear > lastYear) ? 1 : lastSequence + 1;
 
         return $"{currentYear}/{nextSequence:D3}";
     }

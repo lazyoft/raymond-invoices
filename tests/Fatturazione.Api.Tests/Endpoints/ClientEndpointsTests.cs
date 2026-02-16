@@ -74,7 +74,7 @@ public class ClientEndpointsTests : IClassFixture<WebApplicationFactory<Program>
         {
             RagioneSociale = "Test Company S.r.l.",
             PartitaIva = "01234567897", // Valid Partita IVA with correct checksum
-            CodiceFiscale = "TESTCF12345H501A",
+            CodiceFiscale = "12345678901", // Valid persona giuridica format (11 digits)
             ClientType = ClientType.Company,
             Email = "test@example.com",
             Address = new Address
@@ -235,7 +235,14 @@ public class ClientEndpointsTests : IClassFixture<WebApplicationFactory<Program>
             PartitaIva = "22222222220", // Valid checksum, unique for this test
             Email = "delete@example.com",
             ClientType = ClientType.Company,
-            Address = new Address()
+            Address = new Address
+            {
+                Street = "Via Delete 1",
+                City = "Roma",
+                Province = "RM",
+                PostalCode = "00100",
+                Country = "Italia"
+            }
         };
 
         var createResponse = await _client.PostAsJsonAsync("/api/clients", newClient);

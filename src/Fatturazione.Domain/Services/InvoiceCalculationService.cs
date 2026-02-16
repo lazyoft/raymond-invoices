@@ -70,14 +70,29 @@ public class InvoiceCalculationService : IInvoiceCalculationService
             // Calculate IVA breakdown by rate
             invoice.IvaByRate = CalculateIvaByRate(invoice);
 
-            // Calculate ritenuta
-            invoice.RitenutaAmount = CalculateRitenutaAmount(invoice);
+            // Check for split payment (Art. 17-ter DPR 633/72)
+            bool isSplitPayment = invoice.Client?.SubjectToSplitPayment == true;
 
-            // No bollo for standard invoices with IVA
-            invoice.BolloAmount = 0;
+            if (isSplitPayment)
+            {
+                // Split payment: IVA goes directly to Treasury, not to supplier
+                // Ritenuta does NOT apply with split payment (mutually exclusive)
+                invoice.RitenutaAmount = 0;
+                invoice.BolloAmount = 0;
+                // TotalDue = ImponibileTotal (IVA is not collected by supplier)
+                invoice.TotalDue = invoice.ImponibileTotal;
+            }
+            else
+            {
+                // Calculate ritenuta
+                invoice.RitenutaAmount = CalculateRitenutaAmount(invoice);
 
-            // Calculate total due
-            invoice.TotalDue = invoice.SubTotal - invoice.RitenutaAmount;
+                // No bollo for standard invoices with IVA
+                invoice.BolloAmount = 0;
+
+                // Calculate total due
+                invoice.TotalDue = invoice.SubTotal - invoice.RitenutaAmount;
+            }
         }
     }
 
@@ -119,7 +134,7 @@ public class InvoiceCalculationService : IInvoiceCalculationService
         }
 
         return _ritenutaService.CalculateRitenuta(
-            invoice.SubTotal,
+            invoice.ImponibileTotal,
             invoice.Client.RitenutaPercentage
         );
     }

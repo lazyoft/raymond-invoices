@@ -35,8 +35,12 @@ public static class InvoiceValidator
             errors.Add("DueDate deve essere dopo InvoiceDate");
         }
 
-        // Validate items
-        if (invoice.Items != null)
+        // Validate items - at least one item required
+        if (invoice.Items == null || invoice.Items.Count == 0)
+        {
+            errors.Add("La fattura deve contenere almeno un item");
+        }
+        else
         {
             for (int i = 0; i < invoice.Items.Count; i++)
             {
@@ -59,6 +63,16 @@ public static class InvoiceValidator
         if (string.IsNullOrWhiteSpace(item.Description))
         {
             errors.Add($"Item {itemNumber}: Description è obbligatoria");
+        }
+
+        if (item.Quantity <= 0)
+        {
+            errors.Add($"Item {itemNumber}: Quantity deve essere maggiore di 0");
+        }
+
+        if (item.UnitPrice < 0)
+        {
+            errors.Add($"Item {itemNumber}: UnitPrice non può essere negativo");
         }
 
         return errors;

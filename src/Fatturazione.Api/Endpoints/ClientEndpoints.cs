@@ -66,6 +66,15 @@ public static class ClientEndpoints
         Client client,
         IClientRepository repository)
     {
+        // Validate client data (Art. 21, comma 2, lett. e-f, DPR 633/72)
+        var (isValid, validationErrors) = ClientValidator.Validate(client);
+        if (!isValid)
+        {
+            var errorDict = validationErrors.Select((e, i) => new { Key = $"Error{i}", Value = e })
+                .ToDictionary(x => x.Key, x => new[] { x.Value });
+            return Results.ValidationProblem(errorDict);
+        }
+
         // Validate Partita IVA
         if (!PartitaIvaValidator.Validate(client.PartitaIva))
         {
@@ -104,6 +113,15 @@ public static class ClientEndpoints
         if (existing == null)
         {
             return Results.NotFound();
+        }
+
+        // Validate client data (Art. 21, comma 2, lett. e-f, DPR 633/72)
+        var (isValid, validationErrors) = ClientValidator.Validate(client);
+        if (!isValid)
+        {
+            var errorDict = validationErrors.Select((e, i) => new { Key = $"Error{i}", Value = e })
+                .ToDictionary(x => x.Key, x => new[] { x.Value });
+            return Results.ValidationProblem(errorDict);
         }
 
         // Validate Partita IVA

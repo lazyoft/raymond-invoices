@@ -56,9 +56,9 @@ public class InvoiceNumberingServiceTests
     }
 
     [Fact]
-    public void GenerateNextInvoiceNumber_WithPreviousYear_ContinuesSequence()
+    public void GenerateNextInvoiceNumber_WithPreviousYear_ResetsSequenceToOne()
     {
-        // Note: Dal 2013, la numerazione progressiva può continuare senza reset annuale
+        // Per Art. 21 DPR 633/72, la numerazione riparte da 001 al cambio anno
         // Arrange
         var currentYear = DateTime.Now.Year;
         var lastNumber = "2025/005";
@@ -67,7 +67,49 @@ public class InvoiceNumberingServiceTests
         var result = _sut.GenerateNextInvoiceNumber(lastNumber);
 
         // Assert
-        result.Should().Be($"{currentYear}/006");
+        result.Should().Be($"{currentYear}/001");
+    }
+
+    [Fact]
+    public void GenerateNextInvoiceNumber_WithSameYear_IncrementsNormally()
+    {
+        // Arrange
+        var currentYear = DateTime.Now.Year;
+        var lastNumber = $"{currentYear}/042";
+
+        // Act
+        var result = _sut.GenerateNextInvoiceNumber(lastNumber);
+
+        // Assert
+        result.Should().Be($"{currentYear}/043");
+    }
+
+    [Fact]
+    public void GenerateNextInvoiceNumber_WithPreviousYear_HighSequence_ResetsToOne()
+    {
+        // Arrange
+        var currentYear = DateTime.Now.Year;
+        var lastNumber = "2024/999";
+
+        // Act
+        var result = _sut.GenerateNextInvoiceNumber(lastNumber);
+
+        // Assert
+        result.Should().Be($"{currentYear}/001");
+    }
+
+    [Fact]
+    public void GenerateNextInvoiceNumber_WithMultipleYearsBack_ResetsToOne()
+    {
+        // Arrange
+        var currentYear = DateTime.Now.Year;
+        var lastNumber = "2020/050";
+
+        // Act
+        var result = _sut.GenerateNextInvoiceNumber(lastNumber);
+
+        // Assert
+        result.Should().Be($"{currentYear}/001");
     }
 
     [Fact]

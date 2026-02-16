@@ -158,6 +158,8 @@ static void SeedData(IServiceProvider services)
         Email = "protocollo@comune.firenze.it",
         Phone = "+39 055 1234567",
         SubjectToRitenuta = false,
+        SubjectToSplitPayment = true,
+        CodiceUnivocoUfficio = "UFXZ0L",
         Address = new Fatturazione.Domain.Models.Address
         {
             Street = "Piazza della Signoria 1",
