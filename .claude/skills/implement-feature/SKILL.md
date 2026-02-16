@@ -19,7 +19,7 @@ Quando l'utente chiede di implementare una feature, segui SEMPRE questo flusso:
 
 ### Fase 1: Analisi dei Requisiti di Dominio
 
-1. **Leggi il documento di dominio** in `references/fiscal-rules.md` per intero
+1. **Leggi il documento di dominio** in `references/fiscal-rules.md` per intero. Il path è relativo al folder della skill.
 2. **Identifica le sezioni rilevanti** per la feature richiesta
 3. **Estrai le regole fiscali** che vincolano l'implementazione
 4. **Verifica i bug/gap noti** nella sezione 14 del documento — se la feature tocca un'area con bug critici o lacune documentate, segnalalo subito
