@@ -12,13 +12,17 @@ public class InvoiceCalculationServiceTests
 {
     private readonly IRitenutaService _ritenutaServiceMock;
     private readonly IBolloService _bolloServiceMock;
+    private readonly IDocumentDiscountService _documentDiscountServiceMock;
     private readonly InvoiceCalculationService _sut;
 
     public InvoiceCalculationServiceTests()
     {
         _ritenutaServiceMock = Substitute.For<IRitenutaService>();
         _bolloServiceMock = Substitute.For<IBolloService>();
-        _sut = new InvoiceCalculationService(_ritenutaServiceMock, _bolloServiceMock);
+        _documentDiscountServiceMock = Substitute.For<IDocumentDiscountService>();
+        _documentDiscountServiceMock.ApplyDocumentDiscount(Arg.Any<decimal>(), Arg.Any<decimal>(), Arg.Any<decimal>())
+            .Returns(callInfo => callInfo.ArgAt<decimal>(0)); // Pass-through by default
+        _sut = new InvoiceCalculationService(_ritenutaServiceMock, _bolloServiceMock, _documentDiscountServiceMock);
     }
 
     #region CalculateItemTotals Tests
@@ -358,7 +362,7 @@ public class InvoiceCalculationServiceTests
         };
 
         _ritenutaServiceMock.AppliesRitenuta(client).Returns(true);
-        _ritenutaServiceMock.CalculateRitenuta(1000m, 20m).Returns(200m);
+        _ritenutaServiceMock.CalculateRitenuta(1000m, client).Returns(200m);
 
         // Act
         _sut.CalculateInvoiceTotals(invoice);
@@ -401,8 +405,8 @@ public class InvoiceCalculationServiceTests
         // Act
         _sut.CalculateInvoiceTotals(invoice);
 
-        // Assert - verify that ImponibileTotal (1000) is passed, not SubTotal (1220)
-        _ritenutaServiceMock.Received(1).CalculateRitenuta(1000m, 20m);
+        // Assert - verify that ImponibileTotal (1000) is passed with client, not SubTotal (1220)
+        _ritenutaServiceMock.Received(1).CalculateRitenuta(1000m, client);
     }
 
     [Fact]
@@ -428,7 +432,7 @@ public class InvoiceCalculationServiceTests
         };
 
         _ritenutaServiceMock.AppliesRitenuta(client).Returns(true);
-        _ritenutaServiceMock.CalculateRitenuta(5000m, 20m).Returns(1000m);
+        _ritenutaServiceMock.CalculateRitenuta(5000m, client).Returns(1000m);
 
         // Act
         _sut.CalculateInvoiceTotals(invoice);
@@ -773,7 +777,7 @@ public class InvoiceCalculationServiceTests
         // Assert
         invoice.RitenutaAmount.Should().Be(0m, "Split payment and ritenuta are mutually exclusive per Art. 17-ter DPR 633/72");
         invoice.TotalDue.Should().Be(1000m);
-        _ritenutaServiceMock.DidNotReceive().CalculateRitenuta(Arg.Any<decimal>(), Arg.Any<decimal>());
+        _ritenutaServiceMock.DidNotReceive().CalculateRitenuta(Arg.Any<decimal>(), Arg.Any<Client>());
     }
 
     [Fact]

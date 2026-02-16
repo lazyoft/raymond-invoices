@@ -12,6 +12,16 @@ namespace Fatturazione.Api.Endpoints;
 public record TransitionRequest(InvoiceStatus NewStatus);
 
 /// <summary>
+/// DTO for credit note creation requests
+/// </summary>
+public record CreditNoteRequest(string Reason);
+
+/// <summary>
+/// DTO for debit note creation requests
+/// </summary>
+public record DebitNoteRequest(List<InvoiceItem> Items, string Reason);
+
+/// <summary>
 /// Response for invoice status transition, including optional warnings
 /// </summary>
 public record TransitionResponse(Invoice Invoice, string? Warning);
@@ -77,6 +87,27 @@ public static class InvoiceEndpoints
             .WithDescription("Delete an invoice")
             .Produces(204)
             .Produces(404);
+
+        group.MapGet("/{id:guid}/xml", GetInvoiceXml)
+            .WithName("GetInvoiceXml")
+            .WithDescription("Generate FatturaPA XML for an invoice (DL 119/2018)")
+            .Produces<string>(200, "application/xml")
+            .Produces(404)
+            .Produces<ValidationProblemDetails>(400);
+
+        group.MapPost("/{id:guid}/credit-note", CreateCreditNote)
+            .WithName("CreateCreditNote")
+            .WithDescription("Create a credit note (TD04) for an invoice (Art. 26 DPR 633/72)")
+            .Produces<Invoice>(201)
+            .Produces(404)
+            .Produces<ValidationProblemDetails>(400);
+
+        group.MapPost("/{id:guid}/debit-note", CreateDebitNote)
+            .WithName("CreateDebitNote")
+            .WithDescription("Create a debit note (TD05) for an invoice (Art. 26 DPR 633/72)")
+            .Produces<Invoice>(201)
+            .Produces(404)
+            .Produces<ValidationProblemDetails>(400);
 
         return group;
     }
@@ -298,5 +329,111 @@ public static class InvoiceEndpoints
     {
         var deleted = await repository.DeleteAsync(id);
         return deleted ? Results.NoContent() : Results.NotFound();
+    }
+
+    private static async Task<IResult> GetInvoiceXml(
+        Guid id,
+        IInvoiceRepository invoiceRepository,
+        IClientRepository clientRepository,
+        IIssuerProfileRepository issuerProfileRepository,
+        IFatturaPAXmlService xmlService)
+    {
+        var invoice = await invoiceRepository.GetByIdAsync(id);
+        if (invoice == null)
+        {
+            return Results.NotFound();
+        }
+
+        // Load client
+        invoice.Client = await clientRepository.GetByIdAsync(invoice.ClientId);
+
+        // Load issuer profile
+        var issuer = await issuerProfileRepository.GetAsync();
+        if (issuer == null)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { "IssuerProfile", new[] { "Profilo emittente non configurato. Configurare tramite PUT /api/issuer-profile" } }
+            });
+        }
+
+        var xml = xmlService.GenerateXml(invoice, issuer);
+        return Results.Content(xml, "application/xml");
+    }
+
+    private static async Task<IResult> CreateCreditNote(
+        Guid id,
+        CreditNoteRequest request,
+        IInvoiceRepository invoiceRepository,
+        IClientRepository clientRepository,
+        ICreditNoteService creditNoteService,
+        IInvoiceCalculationService calculationService)
+    {
+        var originalInvoice = await invoiceRepository.GetByIdAsync(id);
+        if (originalInvoice == null)
+        {
+            return Results.NotFound();
+        }
+
+        // Load client
+        originalInvoice.Client = await clientRepository.GetByIdAsync(originalInvoice.ClientId);
+
+        // Create credit note
+        var creditNote = creditNoteService.CreateCreditNote(originalInvoice, request.Reason);
+
+        // Validate
+        var (isValid, errors) = creditNoteService.ValidateCreditNote(creditNote, originalInvoice);
+        if (!isValid)
+        {
+            var errorDict = errors.Select((e, i) => new { Key = $"Error{i}", Value = e })
+                .ToDictionary(x => x.Key, x => new[] { x.Value });
+            return Results.ValidationProblem(errorDict);
+        }
+
+        // Calculate totals
+        creditNote.Client = originalInvoice.Client;
+        calculationService.CalculateInvoiceTotals(creditNote);
+
+        // Save
+        var created = await invoiceRepository.CreateAsync(creditNote);
+        return Results.Created($"/api/invoices/{created.Id}", created);
+    }
+
+    private static async Task<IResult> CreateDebitNote(
+        Guid id,
+        DebitNoteRequest request,
+        IInvoiceRepository invoiceRepository,
+        IClientRepository clientRepository,
+        ICreditNoteService creditNoteService,
+        IInvoiceCalculationService calculationService)
+    {
+        var originalInvoice = await invoiceRepository.GetByIdAsync(id);
+        if (originalInvoice == null)
+        {
+            return Results.NotFound();
+        }
+
+        // Load client
+        originalInvoice.Client = await clientRepository.GetByIdAsync(originalInvoice.ClientId);
+
+        // Create debit note
+        var debitNote = creditNoteService.CreateDebitNote(originalInvoice, request.Items, request.Reason);
+
+        // Validate
+        var (isValid, errors) = creditNoteService.ValidateCreditNote(debitNote, originalInvoice);
+        if (!isValid)
+        {
+            var errorDict = errors.Select((e, i) => new { Key = $"Error{i}", Value = e })
+                .ToDictionary(x => x.Key, x => new[] { x.Value });
+            return Results.ValidationProblem(errorDict);
+        }
+
+        // Calculate totals
+        debitNote.Client = originalInvoice.Client;
+        calculationService.CalculateInvoiceTotals(debitNote);
+
+        // Save
+        var created = await invoiceRepository.CreateAsync(debitNote);
+        return Results.Created($"/api/invoices/{created.Id}", created);
     }
 }

@@ -30,6 +30,9 @@ builder.Services.AddScoped<IRitenutaService, RitenutaService>();
 builder.Services.AddScoped<IBolloService, BolloService>();
 builder.Services.AddScoped<IInvoiceCalculationService, InvoiceCalculationService>();
 builder.Services.AddScoped<IInvoiceNumberingService, InvoiceNumberingService>();
+builder.Services.AddScoped<ICreditNoteService, CreditNoteService>();
+builder.Services.AddScoped<IDocumentDiscountService, DocumentDiscountService>();
+builder.Services.AddScoped<IFatturaPAXmlService, FatturaPAXmlService>();
 
 // Configure CORS for demo purposes
 builder.Services.AddCors(options =>

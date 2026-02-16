@@ -9,11 +9,13 @@ public class InvoiceCalculationService : IInvoiceCalculationService
 {
     private readonly IRitenutaService _ritenutaService;
     private readonly IBolloService _bolloService;
+    private readonly IDocumentDiscountService _documentDiscountService;
 
-    public InvoiceCalculationService(IRitenutaService ritenutaService, IBolloService bolloService)
+    public InvoiceCalculationService(IRitenutaService ritenutaService, IBolloService bolloService, IDocumentDiscountService documentDiscountService)
     {
         _ritenutaService = ritenutaService;
         _bolloService = bolloService;
+        _documentDiscountService = documentDiscountService;
     }
 
     /// <summary>
@@ -39,6 +41,15 @@ public class InvoiceCalculationService : IInvoiceCalculationService
         }
 
         invoice.ImponibileTotal = invoice.Items.Sum(i => i.Imponibile);
+
+        // Apply document-level discounts (Specifiche FatturaPA, blocco 2.1.1.8)
+        if (invoice.DocumentDiscountPercentage > 0 || invoice.DocumentDiscountAmount > 0)
+        {
+            invoice.ImponibileTotal = _documentDiscountService.ApplyDocumentDiscount(
+                invoice.ImponibileTotal,
+                invoice.DocumentDiscountPercentage,
+                invoice.DocumentDiscountAmount);
+        }
 
         // Handle Regime Forfettario: no IVA, no ritenuta
         if (invoice.IsRegimeForfettario)
@@ -146,7 +157,8 @@ public class InvoiceCalculationService : IInvoiceCalculationService
     }
 
     /// <summary>
-    /// Calculates ritenuta amount for an invoice
+    /// Calculates ritenuta amount for an invoice using client's full configuration
+    /// (aliquota + base di calcolo percentuale per agenti, non residenti, ecc.)
     /// </summary>
     public decimal CalculateRitenutaAmount(Invoice invoice)
     {
@@ -157,7 +169,7 @@ public class InvoiceCalculationService : IInvoiceCalculationService
 
         return _ritenutaService.CalculateRitenuta(
             invoice.ImponibileTotal,
-            invoice.Client.RitenutaPercentage
+            invoice.Client
         );
     }
 
