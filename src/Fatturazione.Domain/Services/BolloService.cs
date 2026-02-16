@@ -19,18 +19,52 @@ public class BolloService : IBolloService
     private const decimal BolloFixedAmount = 2.00m;
 
     /// <summary>
-    /// Determines if stamp duty (bollo) is required for the invoice
-    /// Required when: IsRegimeForfettario == true AND ImponibileTotal > 77.47
+    /// NaturaIva codes that represent non-IVA operations subject to bollo.
+    /// Per DPR 642/72 Art. 13:
+    /// - N1: Escluse ex art. 15
+    /// - N2_1, N2_2: Non soggette (fuori campo IVA)
+    /// - N3_5, N3_6: Non imponibili senza diritto alla detrazione
+    /// - N4: Esenti (art. 10 DPR 633/72)
+    /// </summary>
+    private static readonly HashSet<NaturaIva> BolloNaturaIvaCodes = new()
+    {
+        NaturaIva.N1,
+        NaturaIva.N2_1,
+        NaturaIva.N2_2,
+        NaturaIva.N3_5,
+        NaturaIva.N3_6,
+        NaturaIva.N4
+    };
+
+    /// <summary>
+    /// Determines if stamp duty (bollo) is required for the invoice.
+    /// Required when the non-IVA portion exceeds 77.47 EUR. This includes:
+    /// - Regime forfettario invoices (entire imponibile is non-IVA)
+    /// - Items with NaturaIva in {N1, N2_1, N2_2, N3_5, N3_6, N4}
+    /// Per DPR 642/72 Art. 13
     /// </summary>
     public bool RequiresBollo(Invoice invoice)
     {
-        if (!invoice.IsRegimeForfettario)
+        // Case 1: Regime Forfettario — entire imponibile is non-IVA
+        if (invoice.IsRegimeForfettario)
         {
-            return false;
+            return invoice.ImponibileTotal > BolloThreshold;
         }
 
-        // Per DPR 642/72 Art. 13: threshold must be exceeded (not equal)
-        return invoice.ImponibileTotal > BolloThreshold;
+        // Case 2: Non-forfettario — check items with NaturaIva codes subject to bollo
+        if (invoice.Items != null && invoice.Items.Count > 0)
+        {
+            decimal nonIvaImponibile = invoice.Items
+                .Where(i => i.NaturaIva.HasValue && BolloNaturaIvaCodes.Contains(i.NaturaIva.Value))
+                .Sum(i => i.Imponibile);
+
+            if (nonIvaImponibile > BolloThreshold)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

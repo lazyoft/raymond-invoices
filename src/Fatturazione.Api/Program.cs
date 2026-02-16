@@ -23,6 +23,7 @@ builder.Services.AddSingleton<InMemoryDataStore>();
 // Register repositories
 builder.Services.AddScoped<IClientRepository, ClientRepository>();
 builder.Services.AddScoped<IInvoiceRepository, InvoiceRepository>();
+builder.Services.AddScoped<IIssuerProfileRepository, IssuerProfileRepository>();
 
 // Register domain services
 builder.Services.AddScoped<IRitenutaService, RitenutaService>();
@@ -71,6 +72,10 @@ apiGroup.MapGroup("/invoices")
     .MapInvoiceEndpoints()
     .WithTags("Invoices");
 
+apiGroup.MapGroup("/issuer-profile")
+    .MapIssuerProfileEndpoints()
+    .WithTags("IssuerProfile");
+
 // Root endpoint
 app.MapGet("/", () => Results.Redirect("/swagger"))
     .WithName("Root")
@@ -93,7 +98,7 @@ static void SeedData(IServiceProvider services)
         Id = Guid.NewGuid(),
         RagioneSociale = "Studio Rossi & Associati",
         PartitaIva = "12345678903", // Valid Italian VAT number
-        CodiceFiscale = "RSSMRA70A01H501Z",
+        CodiceFiscale = "RSSMRA70A01H501S",
         ClientType = Fatturazione.Domain.Models.ClientType.Professional,
         Email = "info@studiorossi.it",
         Phone = "+39 02 1234567",

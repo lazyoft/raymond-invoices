@@ -7,6 +7,16 @@ using Microsoft.AspNetCore.Mvc;
 namespace Fatturazione.Api.Endpoints;
 
 /// <summary>
+/// DTO for invoice status transition requests
+/// </summary>
+public record TransitionRequest(InvoiceStatus NewStatus);
+
+/// <summary>
+/// Response for invoice status transition, including optional warnings
+/// </summary>
+public record TransitionResponse(Invoice Invoice, string? Warning);
+
+/// <summary>
 /// Endpoints for managing invoices
 /// </summary>
 public static class InvoiceEndpoints
@@ -52,6 +62,13 @@ public static class InvoiceEndpoints
             .WithName("IssueInvoice")
             .WithDescription("Issue an invoice (change status to Issued and assign number)")
             .Produces<Invoice>(200)
+            .Produces(404)
+            .Produces<ValidationProblemDetails>(400);
+
+        group.MapPost("/{id:guid}/transition", TransitionInvoice)
+            .WithName("TransitionInvoice")
+            .WithDescription("Transition an invoice to a new status")
+            .Produces<TransitionResponse>(200)
             .Produces(404)
             .Produces<ValidationProblemDetails>(400);
 
@@ -238,6 +255,43 @@ public static class InvoiceEndpoints
         // Update invoice
         var updated = await repository.UpdateAsync(invoice);
         return Results.Ok(updated);
+    }
+
+    private static async Task<IResult> TransitionInvoice(
+        Guid id,
+        TransitionRequest request,
+        IInvoiceRepository repository)
+    {
+        var invoice = await repository.GetByIdAsync(id);
+        if (invoice == null)
+        {
+            return Results.NotFound();
+        }
+
+        // Validate the transition using existing domain logic
+        if (!InvoiceValidator.CanTransitionTo(invoice.Status, request.NewStatus))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { "Status", new[] { $"Cannot transition from {invoice.Status} to {request.NewStatus}" } }
+            });
+        }
+
+        // Determine if a credit note warning is needed (Art. 26 DPR 633/72)
+        // Cancelling a non-Draft invoice requires a credit note (nota di credito)
+        string? warning = null;
+        if (request.NewStatus == InvoiceStatus.Cancelled && invoice.Status != InvoiceStatus.Draft)
+        {
+            warning = "L'annullamento di una fattura già emessa richiede l'emissione di una nota di credito (Art. 26 DPR 633/72).";
+        }
+
+        // Update the status
+        invoice.Status = request.NewStatus;
+
+        // Save
+        var updated = await repository.UpdateAsync(invoice);
+
+        return Results.Ok(new TransitionResponse(updated!, warning));
     }
 
     private static async Task<IResult> DeleteInvoice(Guid id, IInvoiceRepository repository)

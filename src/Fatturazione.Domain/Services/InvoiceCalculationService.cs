@@ -73,26 +73,48 @@ public class InvoiceCalculationService : IInvoiceCalculationService
             // Check for split payment (Art. 17-ter DPR 633/72)
             bool isSplitPayment = invoice.Client?.SubjectToSplitPayment == true;
 
+            // Check if invoice has items with NaturaIva (non-IVA operations that may require bollo)
+            bool hasNonIvaItems = invoice.Items.Any(i => i.NaturaIva.HasValue);
+
             if (isSplitPayment)
             {
                 // Split payment: IVA goes directly to Treasury, not to supplier
                 // Ritenuta does NOT apply with split payment (mutually exclusive)
                 invoice.RitenutaAmount = 0;
-                invoice.BolloAmount = 0;
-                // TotalDue = ImponibileTotal (IVA is not collected by supplier)
-                invoice.TotalDue = invoice.ImponibileTotal;
+
+                // Calculate stamp duty for non-IVA items (per DPR 642/72 Art. 13)
+                invoice.BolloAmount = hasNonIvaItems ? _bolloService.CalculateBollo(invoice) : 0;
+
+                // TotalDue = ImponibileTotal + Bollo (IVA is not collected by supplier)
+                invoice.TotalDue = invoice.ImponibileTotal + invoice.BolloAmount;
+
+                // Add split payment annotation (Art. 17-ter DPR 633/72)
+                AppendSplitPaymentNote(invoice);
             }
             else
             {
                 // Calculate ritenuta
                 invoice.RitenutaAmount = CalculateRitenutaAmount(invoice);
 
-                // No bollo for standard invoices with IVA
-                invoice.BolloAmount = 0;
+                // Calculate stamp duty for non-IVA items (per DPR 642/72 Art. 13)
+                invoice.BolloAmount = hasNonIvaItems ? _bolloService.CalculateBollo(invoice) : 0;
 
                 // Calculate total due
-                invoice.TotalDue = invoice.SubTotal - invoice.RitenutaAmount;
+                invoice.TotalDue = invoice.SubTotal - invoice.RitenutaAmount + invoice.BolloAmount;
             }
+        }
+
+        // Set BolloVirtuale flag for XML FatturaPA
+        invoice.BolloVirtuale = invoice.BolloAmount > 0;
+
+        // Derive EsigibilitaIva (Specifiche FatturaPA, campo 2.2.2.7)
+        if (invoice.Client?.SubjectToSplitPayment == true)
+        {
+            invoice.EsigibilitaIva = EsigibilitaIva.SplitPayment;
+        }
+        else
+        {
+            invoice.EsigibilitaIva = EsigibilitaIva.Immediata;
         }
     }
 
@@ -137,6 +159,26 @@ public class InvoiceCalculationService : IInvoiceCalculationService
             invoice.ImponibileTotal,
             invoice.Client.RitenutaPercentage
         );
+    }
+
+    /// <summary>
+    /// Split payment annotation per Art. 17-ter DPR 633/72
+    /// </summary>
+    private const string SplitPaymentNote = "Scissione dei pagamenti - Art. 17-ter DPR 633/72";
+
+    /// <summary>
+    /// Appends split payment annotation to invoice notes
+    /// </summary>
+    private static void AppendSplitPaymentNote(Invoice invoice)
+    {
+        if (string.IsNullOrEmpty(invoice.Notes))
+        {
+            invoice.Notes = SplitPaymentNote;
+        }
+        else if (!invoice.Notes.Contains(SplitPaymentNote))
+        {
+            invoice.Notes = invoice.Notes + "\n" + SplitPaymentNote;
+        }
     }
 
     /// <summary>

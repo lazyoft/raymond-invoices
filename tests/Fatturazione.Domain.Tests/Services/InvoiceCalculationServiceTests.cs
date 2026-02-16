@@ -841,4 +841,423 @@ public class InvoiceCalculationServiceTests
     }
 
     #endregion
+
+    #region Esigibilita IVA Tests (Specifiche FatturaPA, campo 2.2.2.7)
+
+    [Fact]
+    public void CalculateInvoiceTotals_SplitPaymentClient_EsigibilitaIva_IsSplitPayment()
+    {
+        // Specifiche FatturaPA: SubjectToSplitPayment -> EsigibilitaIva.SplitPayment
+
+        // Arrange
+        var client = new Client
+        {
+            ClientType = ClientType.PublicAdministration,
+            SubjectToSplitPayment = true,
+            SubjectToRitenuta = false
+        };
+
+        var invoice = new Invoice
+        {
+            Client = client,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.EsigibilitaIva.Should().Be(EsigibilitaIva.SplitPayment,
+            "Split payment clients must have EsigibilitaIva = SplitPayment per Art. 17-ter DPR 633/72");
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_NormalClient_EsigibilitaIva_IsImmediata()
+    {
+        // Specifiche FatturaPA: non-split-payment clients -> EsigibilitaIva.Immediata (default)
+
+        // Arrange
+        var client = new Client
+        {
+            SubjectToSplitPayment = false,
+            SubjectToRitenuta = false
+        };
+
+        var invoice = new Invoice
+        {
+            Client = client,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        _ritenutaServiceMock.AppliesRitenuta(client).Returns(false);
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.EsigibilitaIva.Should().Be(EsigibilitaIva.Immediata,
+            "Normal clients must have EsigibilitaIva = Immediata (default)");
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_NullClient_EsigibilitaIva_IsImmediata()
+    {
+        // Arrange
+        var invoice = new Invoice
+        {
+            Client = null,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.EsigibilitaIva.Should().Be(EsigibilitaIva.Immediata,
+            "Null client defaults to EsigibilitaIva = Immediata");
+    }
+
+    #endregion
+
+    #region BolloVirtuale Tests (FatturaPA XML)
+
+    [Fact]
+    public void CalculateInvoiceTotals_BolloApplied_BolloVirtualeIsTrue()
+    {
+        // When BolloAmount > 0, BolloVirtuale must be true for XML FatturaPA
+
+        // Arrange
+        var invoice = new Invoice
+        {
+            IsRegimeForfettario = true,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        _bolloServiceMock.CalculateBollo(invoice).Returns(2.00m);
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.BolloVirtuale.Should().BeTrue("BolloVirtuale must be true when BolloAmount > 0");
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_NoBolloApplied_BolloVirtualeIsFalse()
+    {
+        // When BolloAmount = 0, BolloVirtuale must be false
+
+        // Arrange
+        var invoice = new Invoice
+        {
+            IsRegimeForfettario = true,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 50, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        _bolloServiceMock.CalculateBollo(invoice).Returns(0m);
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.BolloVirtuale.Should().BeFalse("BolloVirtuale must be false when BolloAmount = 0");
+    }
+
+    #endregion
+
+    #region Split Payment Annotation Tests (Art. 17-ter DPR 633/72)
+
+    [Fact]
+    public void CalculateInvoiceTotals_SplitPayment_AddsAnnotation()
+    {
+        // Art. 17-ter DPR 633/72: split payment invoices must include annotation
+
+        // Arrange
+        var client = new Client
+        {
+            ClientType = ClientType.PublicAdministration,
+            SubjectToSplitPayment = true,
+            SubjectToRitenuta = false
+        };
+
+        var invoice = new Invoice
+        {
+            Client = client,
+            Notes = null,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.Notes.Should().Contain("Scissione dei pagamenti - Art. 17-ter DPR 633/72");
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_SplitPayment_AppendsAnnotation_WhenNotesExist()
+    {
+        // When Notes already has content, the annotation is appended
+
+        // Arrange
+        var client = new Client
+        {
+            ClientType = ClientType.PublicAdministration,
+            SubjectToSplitPayment = true,
+            SubjectToRitenuta = false
+        };
+
+        var invoice = new Invoice
+        {
+            Client = client,
+            Notes = "Existing note",
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.Notes.Should().StartWith("Existing note");
+        invoice.Notes.Should().Contain("Scissione dei pagamenti - Art. 17-ter DPR 633/72");
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_SplitPayment_DoesNotDuplicateAnnotation()
+    {
+        // If annotation already present, it should not be duplicated
+
+        // Arrange
+        var client = new Client
+        {
+            ClientType = ClientType.PublicAdministration,
+            SubjectToSplitPayment = true,
+            SubjectToRitenuta = false
+        };
+
+        var invoice = new Invoice
+        {
+            Client = client,
+            Notes = "Scissione dei pagamenti - Art. 17-ter DPR 633/72",
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.Notes.Should().Be("Scissione dei pagamenti - Art. 17-ter DPR 633/72",
+            "Annotation should not be duplicated");
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_NotSplitPayment_DoesNotAddAnnotation()
+    {
+        // Non-split-payment invoices should not have the annotation
+
+        // Arrange
+        var client = new Client
+        {
+            SubjectToSplitPayment = false,
+            SubjectToRitenuta = false
+        };
+
+        var invoice = new Invoice
+        {
+            Client = client,
+            Notes = null,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        _ritenutaServiceMock.AppliesRitenuta(client).Returns(false);
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.Notes.Should().BeNull("Non-split-payment invoices should not have split payment annotation");
+    }
+
+    #endregion
+
+    #region Extended Bollo Integration Tests (DPR 642/72 Art. 13 for non-forfettari)
+
+    [Fact]
+    public void CalculateInvoiceTotals_NonForfettario_WithN4Items_BolloApplied()
+    {
+        // Non-forfettario invoice with N4 exempt items over threshold calls BolloService
+
+        // Arrange
+        var invoice = new Invoice
+        {
+            IsRegimeForfettario = false,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem
+                {
+                    Quantity = 1,
+                    UnitPrice = 100,
+                    IvaRate = IvaRate.Zero,
+                    NaturaIva = NaturaIva.N4
+                }
+            }
+        };
+
+        _bolloServiceMock.CalculateBollo(invoice).Returns(2.00m);
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.BolloAmount.Should().Be(2.00m, "Bollo required for N4 exempt items exceeding 77.47 EUR");
+        invoice.BolloVirtuale.Should().BeTrue();
+        _bolloServiceMock.Received(1).CalculateBollo(invoice);
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_NonForfettario_WithoutNaturaIvaItems_NoBolloCall()
+    {
+        // Non-forfettario invoice with only standard IVA items should NOT call BolloService
+
+        // Arrange
+        var invoice = new Invoice
+        {
+            IsRegimeForfettario = false,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard }
+            }
+        };
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        invoice.BolloAmount.Should().Be(0m);
+        invoice.BolloVirtuale.Should().BeFalse();
+        _bolloServiceMock.DidNotReceive().CalculateBollo(Arg.Any<Invoice>());
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_NonForfettario_MixedItems_TotalDueIncludesBollo()
+    {
+        // Mixed invoice (IVA + non-IVA items): TotalDue includes bollo amount
+
+        // Arrange
+        var client = new Client
+        {
+            SubjectToSplitPayment = false,
+            SubjectToRitenuta = false
+        };
+
+        var invoice = new Invoice
+        {
+            IsRegimeForfettario = false,
+            Client = client,
+            Items = new List<InvoiceItem>
+            {
+                // Standard IVA item: 1000 + 220 IVA = 1220
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard },
+                // N4 exempt item: 100, IVA = 0
+                new InvoiceItem
+                {
+                    Quantity = 1,
+                    UnitPrice = 100,
+                    IvaRate = IvaRate.Zero,
+                    NaturaIva = NaturaIva.N4
+                }
+            }
+        };
+
+        _ritenutaServiceMock.AppliesRitenuta(client).Returns(false);
+        _bolloServiceMock.CalculateBollo(invoice).Returns(2.00m);
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        // Imponibile: 1000 + 100 = 1100
+        // IVA: 220 + 0 = 220
+        // SubTotal: 1320
+        // TotalDue: 1320 - 0 (ritenuta) + 2.00 (bollo) = 1322
+        invoice.ImponibileTotal.Should().Be(1100m);
+        invoice.IvaTotal.Should().Be(220m);
+        invoice.SubTotal.Should().Be(1320m);
+        invoice.BolloAmount.Should().Be(2.00m);
+        invoice.TotalDue.Should().Be(1322m, "TotalDue = SubTotal - Ritenuta + Bollo");
+    }
+
+    [Fact]
+    public void CalculateInvoiceTotals_SplitPayment_WithNaturaIvaItems_BolloApplied()
+    {
+        // Split payment invoice with N4 exempt items should also calculate bollo
+
+        // Arrange
+        var client = new Client
+        {
+            ClientType = ClientType.PublicAdministration,
+            SubjectToSplitPayment = true,
+            SubjectToRitenuta = false
+        };
+
+        var invoice = new Invoice
+        {
+            Client = client,
+            Items = new List<InvoiceItem>
+            {
+                new InvoiceItem { Quantity = 1, UnitPrice = 1000, IvaRate = IvaRate.Standard },
+                new InvoiceItem
+                {
+                    Quantity = 1,
+                    UnitPrice = 100,
+                    IvaRate = IvaRate.Zero,
+                    NaturaIva = NaturaIva.N4
+                }
+            }
+        };
+
+        _bolloServiceMock.CalculateBollo(invoice).Returns(2.00m);
+
+        // Act
+        _sut.CalculateInvoiceTotals(invoice);
+
+        // Assert
+        // Imponibile: 1000 + 100 = 1100
+        // IVA: 220 + 0 = 220 (goes to Treasury)
+        // TotalDue: 1100 + 2.00 (bollo) = 1102
+        invoice.TotalDue.Should().Be(1102m, "Split payment TotalDue = ImponibileTotal + Bollo");
+        invoice.BolloAmount.Should().Be(2.00m);
+        invoice.BolloVirtuale.Should().BeTrue();
+        invoice.EsigibilitaIva.Should().Be(EsigibilitaIva.SplitPayment);
+        invoice.Notes.Should().Contain("Scissione dei pagamenti - Art. 17-ter DPR 633/72");
+    }
+
+    #endregion
 }

@@ -13,4 +13,9 @@ public class InMemoryDataStore
 
     public ConcurrentDictionary<Guid, Client> Clients => _clients;
     public ConcurrentDictionary<Guid, Invoice> Invoices => _invoices;
+
+    /// <summary>
+    /// Single issuer profile (cedente/prestatore) — Art. 21, co. 2, lett. c-d, DPR 633/72
+    /// </summary>
+    public IssuerProfile? IssuerProfile { get; set; }
 }

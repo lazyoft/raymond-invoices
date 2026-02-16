@@ -14,6 +14,10 @@ public static class ClientValidator
     private static readonly Regex CodiceFiscalePersonaFisicaRegex = new(@"^[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]$", RegexOptions.IgnoreCase);
     private static readonly Regex CodiceFiscalePersonaGiuridicaRegex = new(@"^\d{11}$");
     private static readonly Regex CodiceUnivocoUfficioRegex = new(@"^[A-Z0-9]{6}$", RegexOptions.IgnoreCase);
+    private static readonly Regex CigRegex = new(@"^[A-Za-z0-9]{10}$");
+    private static readonly Regex CupRegex = new(@"^[A-Za-z0-9]{15}$");
+    private static readonly Regex CodiceDestinatarioRegex = new(@"^[A-Za-z0-9]{7}$");
+    private static readonly Regex PecRegex = new(@"^[^@\s]+@[^@\s]+\.[^@\s]+$");
 
     /// <summary>
     /// Validates client data
@@ -38,14 +42,54 @@ public static class ClientValidator
             errors.Add("Email non è in un formato valido");
         }
 
-        // CodiceFiscale - optional but if provided must be valid format
+        // CodiceFiscale - optional but if provided must be valid format and checksum
         if (!string.IsNullOrEmpty(client.CodiceFiscale))
         {
-            if (!CodiceFiscalePersonaFisicaRegex.IsMatch(client.CodiceFiscale) &&
-                !CodiceFiscalePersonaGiuridicaRegex.IsMatch(client.CodiceFiscale))
+            if (CodiceFiscalePersonaFisicaRegex.IsMatch(client.CodiceFiscale))
+            {
+                // Format is valid for persona fisica — now verify checksum
+                if (!CodiceFiscaleValidator.ValidateChecksum(client.CodiceFiscale))
+                {
+                    errors.Add("Codice Fiscale non valido (carattere di controllo errato)");
+                }
+            }
+            else if (!CodiceFiscalePersonaGiuridicaRegex.IsMatch(client.CodiceFiscale))
             {
                 errors.Add("CodiceFiscale deve essere 16 caratteri alfanumerici (persona fisica) o 11 cifre (persona giuridica)");
             }
+        }
+
+        // CIG - optional but if provided must be 10 alphanumeric characters (Art. 25 DL 66/2014)
+        if (!string.IsNullOrEmpty(client.CIG) && !CigRegex.IsMatch(client.CIG))
+        {
+            errors.Add("CIG deve essere esattamente 10 caratteri alfanumerici");
+        }
+
+        // CUP - optional but if provided must be 15 alphanumeric characters (Legge 136/2010)
+        if (!string.IsNullOrEmpty(client.CUP) && !CupRegex.IsMatch(client.CUP))
+        {
+            errors.Add("CUP deve essere esattamente 15 caratteri alfanumerici");
+        }
+
+        // CodiceDestinatario - optional but if provided must be 7 alphanumeric characters for non-PA (B2B)
+        if (!string.IsNullOrEmpty(client.CodiceDestinatario))
+        {
+            if (!CodiceDestinatarioRegex.IsMatch(client.CodiceDestinatario))
+            {
+                errors.Add("CodiceDestinatario deve essere esattamente 7 caratteri alfanumerici");
+            }
+        }
+
+        // PEC - optional but if provided must be valid email format
+        if (!string.IsNullOrEmpty(client.PEC) && !PecRegex.IsMatch(client.PEC))
+        {
+            errors.Add("PEC non è in un formato email valido");
+        }
+
+        // Split payment: only valid for PublicAdministration (Art. 17-ter DPR 633/72)
+        if (client.SubjectToSplitPayment && client.ClientType != ClientType.PublicAdministration)
+        {
+            errors.Add("Split payment (scissione dei pagamenti) è applicabile solo a clienti di tipo Pubblica Amministrazione");
         }
 
         // Address validations
