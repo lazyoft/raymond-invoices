@@ -80,6 +80,32 @@ public class Client
     public string? CUP { get; set; }
 
     /// <summary>
+    /// Codice Destinatario SDI — 7 caratteri alfanumerici per B2B, "0000000" se PEC
+    /// Per PA usa CodiceUnivocoUfficio (6 caratteri)
+    /// </summary>
+    public string? CodiceDestinatario { get; set; }
+
+    /// <summary>
+    /// Indirizzo PEC del destinatario (alternativa al Codice Destinatario)
+    /// </summary>
+    public string? PEC { get; set; }
+
+    /// <summary>
+    /// Tipo ritenuta (RT01 persone fisiche, RT02 persone giuridiche)
+    /// </summary>
+    public TipoRitenuta TipoRitenuta { get; set; } = TipoRitenuta.RT01;
+
+    /// <summary>
+    /// Percentuale base di calcolo per ritenuta (100% per professionisti, 50% per agenti senza dipendenti, 20% per agenti con dipendenti)
+    /// </summary>
+    public decimal RitenutaBaseCalcoloPercentuale { get; set; } = 100m;
+
+    /// <summary>
+    /// Causale pagamento per CU (A = lavoro autonomo, Q = agente monomandatario, R = agente plurimandatario, ecc.)
+    /// </summary>
+    public CausalePagamento? CausalePagamento { get; set; }
+
+    /// <summary>
     /// Date the client was created
     /// </summary>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

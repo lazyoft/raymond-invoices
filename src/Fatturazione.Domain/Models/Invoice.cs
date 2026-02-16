@@ -36,6 +36,11 @@ public class Invoice
     public Client? Client { get; set; }
 
     /// <summary>
+    /// Tipo documento (TD01, TD04, TD05, ecc.) — Specifiche FatturaPA, campo 2.1.1.1
+    /// </summary>
+    public DocumentType DocumentType { get; set; } = DocumentType.TD01;
+
+    /// <summary>
     /// Invoice status
     /// </summary>
     public InvoiceStatus Status { get; set; } = InvoiceStatus.Draft;
@@ -49,6 +54,71 @@ public class Invoice
     /// Optional notes on the invoice
     /// </summary>
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// Causale documento — Obbligatoria per regime forfettario
+    /// Deve contenere riferimento normativo (Art. 1, commi 54-89, L. 190/2014)
+    /// </summary>
+    public string? Causale { get; set; }
+
+    /// <summary>
+    /// Data dell'operazione (se diversa dalla data fattura)
+    /// Per fatture immediate: emissione entro 12 gg dall'operazione
+    /// Per fatture differite (TD24): entro il 15 del mese successivo
+    /// </summary>
+    public DateTime? DataOperazione { get; set; }
+
+    /// <summary>
+    /// Indica se è una fattura semplificata (Art. 21-bis DPR 633/72)
+    /// Importo massimo 400 EUR (senza limite per forfettari dal 01/01/2025)
+    /// </summary>
+    public bool IsSimplified { get; set; }
+
+    /// <summary>
+    /// Esigibilità IVA (I/D/S) — Specifiche FatturaPA, campo 2.2.2.7
+    /// Derivata automaticamente: SplitPayment → S, altrimenti I (default)
+    /// </summary>
+    public EsigibilitaIva EsigibilitaIva { get; set; } = EsigibilitaIva.Immediata;
+
+    /// <summary>
+    /// Riferimento al profilo dell'emittente (cedente/prestatore)
+    /// </summary>
+    public Guid? IssuerProfileId { get; set; }
+
+    /// <summary>
+    /// Profilo emittente (navigation property)
+    /// </summary>
+    public IssuerProfile? IssuerProfile { get; set; }
+
+    /// <summary>
+    /// ID della fattura originaria (per note di credito/debito)
+    /// </summary>
+    public Guid? RelatedInvoiceId { get; set; }
+
+    /// <summary>
+    /// Numero della fattura originaria (per note di credito/debito)
+    /// </summary>
+    public string? RelatedInvoiceNumber { get; set; }
+
+    /// <summary>
+    /// Informazioni di pagamento (Specifiche FatturaPA, blocco 2.4)
+    /// </summary>
+    public PaymentInfo? PaymentInfo { get; set; }
+
+    /// <summary>
+    /// Sconto percentuale a livello documento
+    /// </summary>
+    public decimal DocumentDiscountPercentage { get; set; }
+
+    /// <summary>
+    /// Sconto fisso a livello documento
+    /// </summary>
+    public decimal DocumentDiscountAmount { get; set; }
+
+    /// <summary>
+    /// Bollo virtuale (SI/NO) per tracciato XML FatturaPA
+    /// </summary>
+    public bool BolloVirtuale { get; set; }
 
     // Calculated totals
 

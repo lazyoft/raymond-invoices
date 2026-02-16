@@ -31,6 +31,13 @@ public class InvoiceItem
     public IvaRate IvaRate { get; set; }
 
     /// <summary>
+    /// Codice Natura IVA — Obbligatorio quando IvaRate == Zero
+    /// Deve essere null quando IvaRate != Zero
+    /// (Specifiche FatturaPA, campo 2.2.1.14)
+    /// </summary>
+    public NaturaIva? NaturaIva { get; set; }
+
+    /// <summary>
     /// Discount percentage (stub for future feature)
     /// </summary>
     public decimal DiscountPercentage { get; set; } = 0;
