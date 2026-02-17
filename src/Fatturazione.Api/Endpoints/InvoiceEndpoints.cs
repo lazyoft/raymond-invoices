@@ -1,6 +1,6 @@
 using Fatturazione.Domain.Models;
-using Fatturazione.Domain.Services;
-using Fatturazione.Domain.Validators;
+using Fatturazione.Api.UseCases;
+using Fatturazione.Domain.UseCases;
 using Fatturazione.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Mvc;
 
@@ -134,306 +134,153 @@ public static class InvoiceEndpoints
 
     private static async Task<IResult> CreateInvoice(
         Invoice invoice,
-        IInvoiceRepository invoiceRepository,
-        IClientRepository clientRepository,
-        IInvoiceCalculationService calculationService)
+        UseCases.CreateInvoice useCase)
     {
-        // Validate client exists
-        var clientExists = await clientRepository.ExistsAsync(invoice.ClientId);
-        if (!clientExists)
-        {
-            return Results.ValidationProblem(new Dictionary<string, string[]>
-            {
-                { "ClientId", new[] { "Client non trovato" } }
-            });
-        }
-
-        // Load client for calculations
-        invoice.Client = await clientRepository.GetByIdAsync(invoice.ClientId);
-
-        // Validate invoice
-        var (isValid, errors) = InvoiceValidator.Validate(invoice);
-        if (!isValid)
-        {
-            var errorDict = errors.Select((e, i) => new { Key = $"Error{i}", Value = e })
-                .ToDictionary(x => x.Key, x => new[] { x.Value });
-            return Results.ValidationProblem(errorDict);
-        }
-
-        // Calculate totals
-        calculationService.CalculateInvoiceTotals(invoice);
-
-        // Create invoice
-        var created = await invoiceRepository.CreateAsync(invoice);
-        return Results.Created($"/api/invoices/{created.Id}", created);
+        var request = new CreateInvoiceRequest(invoice, ActorContext.System);
+        var response = await useCase.Execute(request);
+        return Results.Created($"/api/invoices/{response.Invoice.Id}", response.Invoice);
     }
 
     private static async Task<IResult> UpdateInvoice(
         Guid id,
         Invoice invoice,
-        IInvoiceRepository invoiceRepository,
-        IClientRepository clientRepository,
-        IInvoiceCalculationService calculationService)
+        UseCases.UpdateInvoice useCase)
     {
+        // HTTP-level guard: route param must match body ID
         if (id != invoice.Id)
         {
             return Results.BadRequest("ID mismatch");
         }
 
-        var existing = await invoiceRepository.GetByIdAsync(id);
-        if (existing == null)
+        try
         {
-            return Results.NotFound();
+            var request = new UpdateInvoiceRequest(id, invoice, ActorContext.System);
+            var response = await useCase.Execute(request);
+            return Results.Ok(response.Invoice);
         }
-
-        // Check immutability: issued invoices cannot be modified (Art. 21 DPR 633/72)
-        if (existing.Status != InvoiceStatus.Draft)
+        catch (Fatturazione.Domain.Exceptions.ForbiddenOperationException ex)
         {
+            // Map to 400 (ValidationProblem) for backward compatibility:
+            // issued-invoice immutability is a validation concern from the client's perspective
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
-                { "Status", new[] { "Cannot modify an issued invoice. Use credit/debit note (nota di credito/debito) instead." } }
+                { "Status", new[] { ex.Reason ?? ex.Message } }
             });
         }
-
-        // Validate client exists
-        var clientExists = await clientRepository.ExistsAsync(invoice.ClientId);
-        if (!clientExists)
-        {
-            return Results.ValidationProblem(new Dictionary<string, string[]>
-            {
-                { "ClientId", new[] { "Client non trovato" } }
-            });
-        }
-
-        // Load client for calculations
-        invoice.Client = await clientRepository.GetByIdAsync(invoice.ClientId);
-
-        // Validate invoice
-        var (isValid, errors) = InvoiceValidator.Validate(invoice);
-        if (!isValid)
-        {
-            var errorDict = errors.Select((e, i) => new { Key = $"Error{i}", Value = e })
-                .ToDictionary(x => x.Key, x => new[] { x.Value });
-            return Results.ValidationProblem(errorDict);
-        }
-
-        // Recalculate totals
-        calculationService.CalculateInvoiceTotals(invoice);
-
-        // Update invoice
-        var updated = await invoiceRepository.UpdateAsync(invoice);
-        return Results.Ok(updated);
     }
 
     private static async Task<IResult> CalculateInvoiceTotals(
         Guid id,
-        IInvoiceRepository invoiceRepository,
-        IClientRepository clientRepository,
-        IInvoiceCalculationService calculationService)
+        RecalculateInvoice useCase)
     {
-        var invoice = await invoiceRepository.GetByIdAsync(id);
-        if (invoice == null)
-        {
-            return Results.NotFound();
-        }
-
-        // Load client for ritenuta calculation
-        invoice.Client = await clientRepository.GetByIdAsync(invoice.ClientId);
-
-        // Recalculate
-        calculationService.CalculateInvoiceTotals(invoice);
-
-        // Update
-        var updated = await invoiceRepository.UpdateAsync(invoice);
-        return Results.Ok(updated);
+        var request = new RecalculateInvoiceRequest(id, ActorContext.System);
+        var response = await useCase.Execute(request);
+        return Results.Ok(response.Invoice);
     }
 
     private static async Task<IResult> IssueInvoice(
         Guid id,
-        IInvoiceRepository repository,
-        IClientRepository clientRepository,
-        IInvoiceNumberingService numberingService,
-        IInvoiceCalculationService calculationService)
+        UseCases.IssueInvoice useCase)
     {
-        var invoice = await repository.GetByIdAsync(id);
-        if (invoice == null)
+        try
         {
-            return Results.NotFound();
+            var request = new IssueInvoiceRequest(id, ActorContext.System);
+            var response = await useCase.Execute(request);
+            return Results.Ok(response.Invoice);
         }
-
-        // Check if can transition to Issued status
-        if (!InvoiceValidator.CanTransitionTo(invoice.Status, InvoiceStatus.Issued))
+        catch (Fatturazione.Domain.Exceptions.ForbiddenOperationException ex)
         {
+            // Map to 400 (ValidationProblem) for backward compatibility:
+            // invalid status transitions are a validation concern from the client's perspective
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
-                { "Status", new[] { $"Cannot transition from {invoice.Status} to Issued" } }
+                { "Status", new[] { ex.Reason ?? ex.Message } }
             });
         }
-
-        // Load client for calculations
-        invoice.Client = await clientRepository.GetByIdAsync(invoice.ClientId);
-
-        // Recalculate totals before issuing (Bug #8 fix)
-        calculationService.CalculateInvoiceTotals(invoice);
-
-        // Generate invoice number
-        var lastInvoiceNumber = await repository.GetLastInvoiceNumberAsync();
-        invoice.InvoiceNumber = numberingService.GenerateNextInvoiceNumber(lastInvoiceNumber);
-
-        // Update status
-        invoice.Status = InvoiceStatus.Issued;
-
-        // Update invoice
-        var updated = await repository.UpdateAsync(invoice);
-        return Results.Ok(updated);
     }
 
     private static async Task<IResult> TransitionInvoice(
         Guid id,
         TransitionRequest request,
-        IInvoiceRepository repository)
+        UseCases.TransitionInvoiceStatus useCase)
     {
-        var invoice = await repository.GetByIdAsync(id);
-        if (invoice == null)
+        try
+        {
+            var useCaseRequest = new TransitionInvoiceStatusRequest(id, request.NewStatus, ActorContext.System);
+            var response = await useCase.Execute(useCaseRequest);
+            return Results.Ok(new TransitionResponse(response.Invoice, response.CreditNoteWarning));
+        }
+        catch (Fatturazione.Domain.Exceptions.NotFoundException)
         {
             return Results.NotFound();
         }
-
-        // Validate the transition using existing domain logic
-        if (!InvoiceValidator.CanTransitionTo(invoice.Status, request.NewStatus))
+        catch (Fatturazione.Domain.Exceptions.ForbiddenOperationException ex)
         {
+            // Map to 400 (ValidationProblem) for backward compatibility:
+            // invalid status transitions are a validation concern from the client's perspective
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
-                { "Status", new[] { $"Cannot transition from {invoice.Status} to {request.NewStatus}" } }
+                { "Status", new[] { ex.Reason ?? ex.Message } }
             });
         }
-
-        // Determine if a credit note warning is needed (Art. 26 DPR 633/72)
-        // Cancelling a non-Draft invoice requires a credit note (nota di credito)
-        string? warning = null;
-        if (request.NewStatus == InvoiceStatus.Cancelled && invoice.Status != InvoiceStatus.Draft)
-        {
-            warning = "L'annullamento di una fattura già emessa richiede l'emissione di una nota di credito (Art. 26 DPR 633/72).";
-        }
-
-        // Update the status
-        invoice.Status = request.NewStatus;
-
-        // Save
-        var updated = await repository.UpdateAsync(invoice);
-
-        return Results.Ok(new TransitionResponse(updated!, warning));
     }
 
-    private static async Task<IResult> DeleteInvoice(Guid id, IInvoiceRepository repository)
+    private static async Task<IResult> DeleteInvoice(
+        Guid id,
+        UseCases.DeleteInvoice useCase)
     {
-        var deleted = await repository.DeleteAsync(id);
-        return deleted ? Results.NoContent() : Results.NotFound();
+        var request = new DeleteInvoiceRequest(id, ActorContext.System);
+        await useCase.Execute(request);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> GetInvoiceXml(
         Guid id,
-        IInvoiceRepository invoiceRepository,
-        IClientRepository clientRepository,
-        IIssuerProfileRepository issuerProfileRepository,
-        IFatturaPAXmlService xmlService)
+        UseCases.GenerateFatturaPAXml useCase)
     {
-        var invoice = await invoiceRepository.GetByIdAsync(id);
-        if (invoice == null)
+        try
+        {
+            var request = new GenerateFatturaPAXmlRequest(id, ActorContext.System);
+            var response = await useCase.Execute(request);
+            return Results.Content(response.Xml, "application/xml");
+        }
+        catch (Fatturazione.Domain.Exceptions.NotFoundException)
         {
             return Results.NotFound();
         }
-
-        // Load client
-        invoice.Client = await clientRepository.GetByIdAsync(invoice.ClientId);
-
-        // Load issuer profile
-        var issuer = await issuerProfileRepository.GetAsync();
-        if (issuer == null)
+        catch (Fatturazione.Domain.Exceptions.InvalidInputException ex)
+        {
+            var errorDict = ex.Errors
+                .Select((e, i) => new { Key = i == 0 ? "IssuerProfile" : $"Error{i}", Value = e })
+                .ToDictionary(x => x.Key, x => new[] { x.Value });
+            return Results.ValidationProblem(errorDict);
+        }
+        catch (Fatturazione.Domain.Exceptions.ForbiddenOperationException ex)
         {
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
-                { "IssuerProfile", new[] { "Profilo emittente non configurato. Configurare tramite PUT /api/issuer-profile" } }
+                { "Status", new[] { ex.Reason ?? ex.Message } }
             });
         }
-
-        var xml = xmlService.GenerateXml(invoice, issuer);
-        return Results.Content(xml, "application/xml");
     }
 
     private static async Task<IResult> CreateCreditNote(
         Guid id,
         CreditNoteRequest request,
-        IInvoiceRepository invoiceRepository,
-        IClientRepository clientRepository,
-        ICreditNoteService creditNoteService,
-        IInvoiceCalculationService calculationService)
+        UseCases.CreateCreditNote useCase)
     {
-        var originalInvoice = await invoiceRepository.GetByIdAsync(id);
-        if (originalInvoice == null)
-        {
-            return Results.NotFound();
-        }
-
-        // Load client
-        originalInvoice.Client = await clientRepository.GetByIdAsync(originalInvoice.ClientId);
-
-        // Create credit note
-        var creditNote = creditNoteService.CreateCreditNote(originalInvoice, request.Reason);
-
-        // Validate
-        var (isValid, errors) = creditNoteService.ValidateCreditNote(creditNote, originalInvoice);
-        if (!isValid)
-        {
-            var errorDict = errors.Select((e, i) => new { Key = $"Error{i}", Value = e })
-                .ToDictionary(x => x.Key, x => new[] { x.Value });
-            return Results.ValidationProblem(errorDict);
-        }
-
-        // Calculate totals
-        creditNote.Client = originalInvoice.Client;
-        calculationService.CalculateInvoiceTotals(creditNote);
-
-        // Save
-        var created = await invoiceRepository.CreateAsync(creditNote);
-        return Results.Created($"/api/invoices/{created.Id}", created);
+        var useCaseRequest = new CreateCreditNoteRequest(id, request.Reason, ActorContext.System);
+        var response = await useCase.Execute(useCaseRequest);
+        return Results.Created($"/api/invoices/{response.CreditNote.Id}", response.CreditNote);
     }
 
     private static async Task<IResult> CreateDebitNote(
         Guid id,
         DebitNoteRequest request,
-        IInvoiceRepository invoiceRepository,
-        IClientRepository clientRepository,
-        ICreditNoteService creditNoteService,
-        IInvoiceCalculationService calculationService)
+        UseCases.CreateDebitNote useCase)
     {
-        var originalInvoice = await invoiceRepository.GetByIdAsync(id);
-        if (originalInvoice == null)
-        {
-            return Results.NotFound();
-        }
-
-        // Load client
-        originalInvoice.Client = await clientRepository.GetByIdAsync(originalInvoice.ClientId);
-
-        // Create debit note
-        var debitNote = creditNoteService.CreateDebitNote(originalInvoice, request.Items, request.Reason);
-
-        // Validate
-        var (isValid, errors) = creditNoteService.ValidateCreditNote(debitNote, originalInvoice);
-        if (!isValid)
-        {
-            var errorDict = errors.Select((e, i) => new { Key = $"Error{i}", Value = e })
-                .ToDictionary(x => x.Key, x => new[] { x.Value });
-            return Results.ValidationProblem(errorDict);
-        }
-
-        // Calculate totals
-        debitNote.Client = originalInvoice.Client;
-        calculationService.CalculateInvoiceTotals(debitNote);
-
-        // Save
-        var created = await invoiceRepository.CreateAsync(debitNote);
-        return Results.Created($"/api/invoices/{created.Id}", created);
+        var useCaseRequest = new CreateDebitNoteRequest(id, request.Items, request.Reason, ActorContext.System);
+        var response = await useCase.Execute(useCaseRequest);
+        return Results.Created($"/api/invoices/{response.DebitNote.Id}", response.DebitNote);
     }
 }

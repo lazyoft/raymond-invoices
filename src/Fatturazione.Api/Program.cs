@@ -1,5 +1,7 @@
 using Fatturazione.Api.Endpoints;
+using Fatturazione.Api.Middleware;
 using Fatturazione.Domain.Services;
+using Fatturazione.Api.UseCases;
 using Fatturazione.Infrastructure.Data;
 using Fatturazione.Infrastructure.Repositories;
 
@@ -34,6 +36,17 @@ builder.Services.AddScoped<ICreditNoteService, CreditNoteService>();
 builder.Services.AddScoped<IDocumentDiscountService, DocumentDiscountService>();
 builder.Services.AddScoped<IFatturaPAXmlService, FatturaPAXmlService>();
 
+// Register use cases
+builder.Services.AddScoped<RecalculateInvoice>();
+builder.Services.AddScoped<CreateInvoice>();
+builder.Services.AddScoped<UpdateInvoice>();
+builder.Services.AddScoped<IssueInvoice>();
+builder.Services.AddScoped<TransitionInvoiceStatus>();
+builder.Services.AddScoped<DeleteInvoice>();
+builder.Services.AddScoped<CreateCreditNote>();
+builder.Services.AddScoped<CreateDebitNote>();
+builder.Services.AddScoped<GenerateFatturaPAXml>();
+
 // Configure CORS for demo purposes
 builder.Services.AddCors(options =>
 {
@@ -49,6 +62,9 @@ var app = builder.Build();
 
 // Seed demo data
 SeedData(app.Services);
+
+// Domain exception handling middleware (SBA two-tier error handling)
+app.UseDomainExceptionHandling();
 
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
